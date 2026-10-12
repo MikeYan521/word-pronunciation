@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>英语单词书 · 词汇与发音</title>
+<!-- 用相对路径：同一份文件既能在域名根（Netlify / 本地）运行，
+     也能在子目录（GitHub Pages 的 /<repo>/web/）运行 -->
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <a class="brand" href="#/">
+      <span class="brand-mark">V</span>
+      <span class="brand-text">英语单词书 · 词汇与发音</span>
+    </a>
+    <nav class="nav" id="main-nav">
+      <a href="#/" data-nav="home">首页</a>
+      <a href="#/books" data-nav="books">单词书</a>
+      <a href="#/stats" data-nav="stats">学习统计</a>
+    </nav>
+    <div class="topbar-actions">
+      <span class="health" id="health-chip" title="服务状态">检测中…</span>
+    </div>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <div id="toast-host" class="toast-host" aria-live="polite"></div>
+
+  <div id="modal-host" class="modal-host hidden">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="modal-title">提示</h3>
+        <button class="icon-btn" data-close="1" aria-label="关闭">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot"></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "english-wordbook-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "英语单词书 PDF → 章节词条 → 英美音标 + 真实发音（纯前端 / Netlify）",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node tools/netlify-prepare.mjs",
+    "vendor": "node tools/fetch-vendor.mjs",
+    "dev": "npx --yes netlify-cli dev"
+  },
+  "license": "MIT"
+}
