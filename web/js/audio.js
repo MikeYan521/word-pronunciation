@@ -16,6 +16,18 @@ player.preload = 'auto';
 
 let currentButton = null;
 
+// 站点是否部署了 /api/audio 代理：
+//   'unknown' 未探测 / 'ok' 可用 / 'missing' 没有（静态托管，如 GitHub Pages）
+// 记住结果后，同一页面里所有发音按钮都直接用能播的地址，避免每次都 404 一次。
+let proxyState = 'unknown';
+
+/** 词典直连地址（绕开本站代理：<audio> 播放媒体不受跨域限制） */
+function directAudioUrl(word, accent) {
+  const type = accent === 'uk' ? 1 : 2;
+  const text = (word && (word.lemma || word.display)) || String(word || '');
+  return `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&type=${type}`;
+}
+
 function clearButton(button) {
   if (!button) return;
   button.classList.remove('loading', 'playing');
@@ -55,9 +67,25 @@ export async function playUrl(url, button, forceReload = false) {
   if (isSame) {
     // repeat the same clip without overlap
     player.pause();
-    player.currentTime = 0;
+    try { player.currentTime = 0; } catch (_) { /* 某些浏览器在 metadata 未就绪时会抛错 */ }
+    if (player.readyState === 0) player.load();   // 资源被浏览器回收时重新加载
     if (button) button.classList.add('playing');
-    try { await player.play(); } catch (_) { /* autoplay guard */ }
+    try {
+      await player.play();
+    } catch (err) {
+      // 再试一次：先 load() 再播（移动端 Safari/Chrome 在资源被释放后常见）
+      try {
+        player.load();
+        await player.play();
+      } catch (err2) {
+        clearButton(button);
+        currentButton = null;
+        toast(`播放失败：${(err2 && err2.message) || err2}`, 'err', {
+          label: '重试',
+          onClick: () => playUrl(url, button, true),
+        });
+      }
+    }
     return;
   }
 
@@ -194,54 +222,53 @@ export function markAudioMissing(button) {
  */
 export async function playWordAudio(word, accent, button) {
   if (accent !== 'uk' && accent !== 'us') return;
-  const url = audioUrlFor(word, accent);
   const target = button || null;
   const status = target ? target.dataset.status : 'unknown';
 
-  // 站点未部署 /api/audio 函数时（只上传了静态文件），退回浏览器直连录音地址：
-  // <audio> 播放媒体不受 CORS 限制，仍然播放的是词典真实录音。
-  const directFallback = () => {
-    const type = accent === 'uk' ? 1 : 2;
-    const remote = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word.lemma || word)}&type=${type}`;
-    return playUrl(remote, target).then(() => {
-      if (target) target.dataset.status = 'available';
-    });
-  };
+  // 已经知道哪个地址能播 → 一直用它（重播走的也是同一个地址，才能重复播放）
+  let url = target && target.dataset.playUrl;
 
-  if (status === 'available' || status === 'unknown') {
-    if (status === 'unknown' && word.id !== undefined) {
-      // resolve first so we can tell "no recording" from "network problem"
+  if (!url) {
+    if (proxyState === 'missing') {
+      url = directAudioUrl(word, accent);
+    } else {
+      const proxyUrl = audioUrlFor(word, accent);
       try {
-        const probe = await fetch(url, {
-          headers: { Range: 'bytes=0-1' },
-        });
-        if (!probe.ok) {
-          let payload = {};
-          try { payload = await probe.json(); } catch (_) { /* not json */ }
-          // 404 但响应不是我们的 JSON（说明没有部署函数）→ 直接试录音源
-          if (!payload || payload.error === undefined) {
-            await directFallback();
+        const res = await fetch(proxyUrl, { headers: { Range: 'bytes=0-1' } });
+        if (res.ok || res.status === 206) {
+          proxyState = 'ok';
+          url = proxyUrl;
+        } else {
+          let payload = null;
+          try { payload = await res.json(); } catch (_) { payload = null; }
+          if (payload && payload.error !== undefined) {
+            // 是我们的代理返回的明确结果
+            if (payload.retryable) {
+              toast('网络异常，暂时无法获取发音，请重试', 'err');
+              return;
+            }
+            markAudioMissing(target);
+            toast(`“${(word && word.lemma) || ''}” 没有${accent === 'uk' ? '英式' : '美式'}录音`, 'err');
             return;
           }
-          if (payload.retryable) {
-            toast('网络异常，暂时无法获取发音，请重试', 'err');
-            return;
-          }
-          markAudioMissing(target);
-          toast(`“${word.lemma || ''}” 没有${accent === 'uk' ? '英式' : '美式'}录音`, 'err');
-          return;
+          // 404 但不是我们的 JSON → 站点没部署 /api/audio（纯静态托管）
+          proxyState = 'missing';
+          url = directAudioUrl(word, accent);
         }
-        if (target) target.dataset.status = 'available';
-      } catch (err) {
-        await directFallback();
-        return;
+      } catch (_) {
+        // 网络异常或跨域：退回直连地址
+        proxyState = 'missing';
+        url = directAudioUrl(word, accent);
       }
     }
-    await playUrl(url, target);
-    return;
+    if (target && url) {
+      target.dataset.playUrl = url;
+      if (!target.dataset.status || target.dataset.status === 'unknown') target.dataset.status = 'available';
+    }
   }
-  // status === 'missing': server said there is nothing, but allow a manual retry
-  await playUrl(audioUrlFor(word, accent, true), target);
+
+  if (!url) return;
+  await playUrl(url, target);
 }
 
 export async function probeWords(wordIds, accents = ['uk', 'us']) {
