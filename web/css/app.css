@@ -283,6 +283,36 @@ tbody tr:last-child td { border-bottom: 0; }
   contain-intrinsic-size: 88px;
 }
 .word-row:last-child { border-bottom: 0; }
+
+/* 循环播放：正在读的那个词 */
+.word-row.loop-current {
+  background: var(--tint-sky);
+  border-left: 3px solid var(--uk);
+  border-radius: var(--radius-sm);
+  padding-left: 10px;
+  box-shadow: inset 0 0 0 1px rgba(0, 117, 222, .10);
+}
+.word-row.loop-current .spelling { color: var(--uk); }
+
+/* ---------- loop panel ---------- */
+.loop-panel { padding: 16px 20px; }
+.loop-panel h3 { margin: 0; font-size: 16px; }
+.loop-status { margin-top: 10px; color: var(--slate); font-size: 13px; }
+.loop-progress { margin-top: 6px; height: 4px; }
+.loop-settings {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px dashed var(--hairline-strong);
+}
+.loop-settings-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.loop-panel .btn.primary:disabled { opacity: .6; }
+@media (max-width: 767px) {
+  .loop-panel .row { gap: 6px; }
+  .loop-panel .btn.small { padding: 6px 10px; }
+  .loop-status { font-size: 12px; line-height: 1.5; }
+}
 .word-main { flex: 1 1 260px; min-width: 150px; }
 .word-main .spelling { font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -.2px; }
 .word-main .meaning { font-size: 13px; color: var(--steel); line-height: 1.5; }

@@ -7,6 +7,7 @@ import * as parsePage from './pages/parse.js';
 import * as chapter from './pages/chapter.js';
 import * as word from './pages/word.js';
 import * as stats from './pages/stats.js';
+import { runUnmount } from './lifecycle.js';
 
 const view = document.getElementById('view');
 
@@ -43,6 +44,7 @@ function setActiveNav(path) {
 
 async function handleRoute() {
   const { path, params } = parseHash();
+  runUnmount();                 // 清理上一页的定时器 / 音频任务 / 事件
   setActiveNav(path);
   window.scrollTo({ top: 0 });
   for (const [pattern, handler] of routes) {

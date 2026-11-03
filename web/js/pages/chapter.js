@@ -3,7 +3,11 @@
 import { api } from '../api.js';
 import { el, mount, toast, loadingCard, progressBar, modal } from '../ui.js';
 import { navigate } from '../app.js';
-import { playUrl, soundButtons, probeWords, playWordAudio, markAudioMissing, ttsSupport, speak } from '../audio.js';
+import { soundButtons, probeWords, playWordAudio, ttsSupport, speak,
+         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js';
+import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
+         LOOP_DEFAULTS } from '../core/loop.js';
+import { onUnmount } from '../lifecycle.js';
 
 const state = {
   words: [],
@@ -155,9 +159,11 @@ export async function render(root, chapterId) {
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         const accent = btn.dataset.accent;
+        if (loop && loop.status === 'playing') loop.pause();   // 手动试听时先暂停循环，避免抢音频
         if (btn.dataset.status === 'missing') {
           // previously reported as missing - let the user force a retry
-          playUrl(btn.dataset.url + '&refresh=1', btn, true).catch(() => {});
+          delete btn.dataset.playUrl;
+          playWordAudio(word, accent, btn).catch(() => {});
           return;
         }
         playWordAudio(word, accent, btn).catch(() => {});
@@ -236,6 +242,7 @@ export async function render(root, chapterId) {
     }
     mount(listHost, ...nodes);
     updateFooter();
+    if (loopReady) applyLoopHighlight(false);
   }
 
   /** Replace only the rows whose data changed (keeps scroll position). */
@@ -352,6 +359,221 @@ export async function render(root, chapterId) {
       (missing ? `（${missing} 个单词暂未取得音频）` : '');
   }
 
+  // ------------------------------------------------------------ 循环播放
+  const LOOP_STORAGE_KEY = 'wordbook.loop.settings';
+
+  function loadLoopSettings() {
+    try {
+      const raw = localStorage.getItem(LOOP_STORAGE_KEY);
+      if (!raw) return { ...LOOP_DEFAULTS };
+      const saved = JSON.parse(raw);
+      const repeat = saved.repeat === 'Infinity' || saved.repeat === null
+        ? Infinity : Number(saved.repeat);
+      return {
+        repeat: REPEAT_OPTIONS.includes(repeat) ? repeat : LOOP_DEFAULTS.repeat,
+        interval: INTERVAL_OPTIONS.includes(Number(saved.interval))
+          ? Number(saved.interval) : LOOP_DEFAULTS.interval,
+        accents: ['uk', 'us', 'both'].includes(saved.accents) ? saved.accents : LOOP_DEFAULTS.accents,
+        order: ['seq', 'random'].includes(saved.order) ? saved.order : LOOP_DEFAULTS.order,
+        loopList: Boolean(saved.loopList),
+      };
+    } catch (_) {
+      return { ...LOOP_DEFAULTS };
+    }
+  }
+
+  function saveLoopSettings(settings) {
+    try {
+      localStorage.setItem(LOOP_STORAGE_KEY, JSON.stringify({
+        ...settings,
+        repeat: settings.repeat === Infinity ? 'Infinity' : settings.repeat,
+      }));
+    } catch (_) { /* 隐私模式下可能写不了，忽略 */ }
+  }
+
+  let lastLoopWordId = null;
+  let loopRedrawGuard = false;
+  let loopReady = false;
+
+  function loopCurrentWordId() {
+    const snap = loop.snapshot();
+    return snap.word ? snap.word.id : null;
+  }
+
+  /** 给正在播放的词加高亮；必要时把尚未渲染的那一行补渲染出来 */
+  function applyLoopHighlight(scroll = false) {
+    if (!loopReady) return;
+    document.querySelectorAll('.word-row.loop-current').forEach((row) => row.classList.remove('loop-current'));
+    const id = loopCurrentWordId();
+    if (id === undefined || id === null) return;
+    const row = rowById.get(id);
+    if (!row) {
+      if (loopRedrawGuard) return;
+      const list = visibleWords();
+      const position = list.findIndex((word) => word.id === id);
+      if (position < 0 || position < state.renderLimit) return;
+      loopRedrawGuard = true;
+      state.renderLimit = position + 1;
+      draw();
+      loopRedrawGuard = false;
+    }
+    const target = rowById.get(id);
+    if (!target) return;
+    target.classList.add('loop-current');
+    if (scroll) {
+      try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { /* ignore */ }
+    }
+  }
+
+  const loopStatus = el('div', { class: 'loop-status small', text: '循环播放：未开始' });
+  const loopBar = el('div', { class: 'progress loop-progress' }, [el('span', { style: 'width:0%' })]);
+  const loopPlayBtn = el('button', { class: 'btn primary small', text: '▶ 开始循环' });
+  const loopPauseBtn = el('button', { class: 'btn small', text: '⏸ 暂停', disabled: true });
+  const loopStopBtn = el('button', { class: 'btn small', text: '⏹ 停止', disabled: true });
+  const loopPrevBtn = el('button', { class: 'icon-btn', title: '上一个单词', text: '⏮' });
+  const loopNextBtn = el('button', { class: 'icon-btn', title: '下一个单词', text: '⏭' });
+  const loopSettingsBox = el('div', { class: 'loop-settings', hidden: true });
+  const loopSettingsBtn = el('button', {
+    class: 'btn small ghost', text: '⚙ 设置',
+    onclick: () => { loopSettingsBox.hidden = !loopSettingsBox.hidden; },
+  });
+
+  const loopPanel = el('div', { class: 'card loop-panel' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { style: 'margin:0', text: '🔁 循环播放' }),
+      el('span', { class: 'tag', text: '口语 / 听力' }),
+      el('span', { class: 'spacer' }),
+      loopPrevBtn, loopPlayBtn, loopPauseBtn, loopStopBtn, loopNextBtn,
+      loopSettingsBtn,
+    ]),
+    loopStatus,
+    loopBar,
+    loopSettingsBox,
+  ]);
+
+  function selectOptions(options, current, onChange, format = (value) => String(value)) {
+    const box = el('select', {}, options.map(({ value, label }) =>
+      el('option', { value: String(value), text: label })));
+    box.value = String(current);
+    box.addEventListener('change', () => onChange(box.value));
+    return box;
+  }
+
+  const initialLoop = loadLoopSettings();
+  const repeatSelect = selectOptions(
+    REPEAT_OPTIONS.map((value) => ({ value, label: value === Infinity ? '无限循环' : `${value} 次` })),
+    initialLoop.repeat,
+    (value) => updateLoopSettings({ repeat: value === 'Infinity' ? Infinity : Number(value) }),
+  );
+  const intervalSelect = selectOptions(
+    INTERVAL_OPTIONS.map((value) => ({ value, label: `${value} 秒` })),
+    initialLoop.interval,
+    (value) => updateLoopSettings({ interval: Number(value) }),
+  );
+  const accentSelect = selectOptions(ACCENT_OPTIONS, initialLoop.accents,
+    (value) => updateLoopSettings({ accents: value }));
+  const orderSelect = selectOptions(ORDER_OPTIONS, initialLoop.order,
+    (value) => updateLoopSettings({ order: value }));
+  const loopListToggle = el('input', { type: 'checkbox' });
+  loopListToggle.checked = initialLoop.loopList;
+  loopListToggle.addEventListener('change', () =>
+    updateLoopSettings({ loopList: loopListToggle.checked }));
+
+  mount(loopSettingsBox,
+    el('div', { class: 'loop-settings-grid' }, [
+      el('label', { class: 'field' }, ['单词重复次数', repeatSelect]),
+      el('label', { class: 'field' }, ['播放间隔', intervalSelect]),
+      el('label', { class: 'field' }, ['发音选择', accentSelect]),
+      el('label', { class: 'field' }, ['播放顺序', orderSelect]),
+      el('label', { class: 'field row tight', style: 'gap:8px;align-self:end' }, [
+        loopListToggle, '列表播完后从头循环',
+      ]),
+    ]),
+    el('p', { class: 'tiny muted', style: 'margin:8px 0 0' },
+      ['修改后从下一次播放生效。列表 = 当前筛选/排序下的单词；播放中会跟随高亮滚动。']),
+  );
+
+  function updateLoopSettings(patch) {
+    loop.setSettings(patch);
+    saveLoopSettings(loop.settings);
+  }
+
+  function loopStart() {
+    const words = visibleWords();
+    if (!words.length) { toast('当前筛选下没有单词', 'err'); return; }
+    stopAudio();
+    loop.start(words);
+  }
+
+  const loop = new LoopController({
+    playClip: async (word, accent) => {
+      const resolved = await resolveAudioUrl(word, accent);
+      if (resolved.retry) throw new Error('网络异常');
+      if (resolved.missing || !resolved.url) throw new Error('没有可用音频');
+      return playAndWait(resolved.url, null);
+    },
+    pauseClip: pauseAudio,
+    resumeClip: resumeAudio,
+    stopClip: stopAudio,
+    onUpdate: (snapshot, event) => {
+      const total = snapshot.repeatTotal === Infinity ? '∞' : snapshot.repeatTotal;
+      const accentLabel = snapshot.accent === 'uk' ? '英式' : '美式';
+      if (snapshot.status === 'idle') {
+        loopStatus.textContent = event === 'completed'
+          ? `循环播放完成：共播放 ${snapshot.played} 段`
+          : '循环播放：未开始';
+        lastLoopWordId = null;
+        applyLoopHighlight(false);      // 停止/播完后取消高亮
+      } else {
+        const word = snapshot.word ? (snapshot.word.display || snapshot.word.lemma) : '…';
+        const phase = snapshot.status === 'paused' ? '已暂停'
+          : snapshot.status === 'waiting' ? '间隔中' : '播放中';
+        loopStatus.textContent = `${phase} · 第 ${snapshot.index + 1}/${snapshot.total} 个 · `
+          + `${word} · 第 ${snapshot.repeatIndex}/${total} 次 · ${accentLabel}`
+          + ` · 间隔 ${snapshot.settings.interval}s`;
+        if (snapshot.word && snapshot.word.id !== lastLoopWordId) {
+          lastLoopWordId = snapshot.word.id;
+          applyLoopHighlight(true);
+        } else {
+          applyLoopHighlight(false);
+        }
+      }
+      if (snapshot.lastError) loopStatus.title = snapshot.lastError;
+      else loopStatus.removeAttribute('title');
+
+      const ratio = snapshot.total ? (snapshot.index + 1) / snapshot.total : 0;
+      loopBar.firstChild.style.width = `${Math.round(ratio * 100)}%`;
+      loopPlayBtn.textContent = snapshot.status === 'idle'
+        ? '▶ 开始循环'
+        : (snapshot.status === 'paused' ? '▶ 继续' : '▶ 播放中');
+      loopPlayBtn.disabled = snapshot.status === 'playing';
+      loopPauseBtn.disabled = snapshot.status !== 'playing' && snapshot.status !== 'waiting';
+      loopStopBtn.disabled = snapshot.status === 'idle';
+      loopPrevBtn.disabled = snapshot.total === 0;
+      loopNextBtn.disabled = snapshot.total === 0;
+    },
+  });
+  loopReady = true;
+  loop.setSettings(initialLoop);
+
+  loopPlayBtn.addEventListener('click', () => {
+    const status = loop.status;
+    if (status === 'idle') loopStart();
+    else if (status === 'paused') loop.resume();
+  });
+  loopPauseBtn.addEventListener('click', () => loop.pause());
+  loopStopBtn.addEventListener('click', () => loop.stop());
+  loopPrevBtn.addEventListener('click', () => {
+    if (loop.status === 'idle') { loopStart(); return; }
+    loop.prev();
+  });
+  loopNextBtn.addEventListener('click', () => {
+    if (loop.status === 'idle') { loopStart(); return; }
+    loop.next();
+  });
+
+  onUnmount(() => loop.stop());
+
   const tts = ttsSupport();
 
   mount(root,
@@ -410,6 +632,7 @@ export async function render(root, chapterId) {
          '只有确认某个口音确实没有录音时才会显示“无音频”，不会用另一种口音代替。']),
       statusLine,
     ]),
+    loopPanel,
     el('div', { class: 'card', style: 'margin-top:14px' }, [listHost]),
     tts.supported === false ? null : el('div', { class: 'small muted', style: 'margin-top:12px' },
       [`备用方案：系统语音合成（${tts.uk ? '有 en-GB' : '无 en-GB'} / ${tts.us ? '有 en-US' : '无 en-US'}）。` +

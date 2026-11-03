@@ -16,6 +16,9 @@ player.preload = 'auto';
 
 let currentButton = null;
 
+// 循环播放等待器：playAndWait() 用它把"本段播完(ended)"变成 Promise
+let pendingClip = null;
+
 // 站点是否部署了 /api/audio 代理：
 //   'unknown' 未探测 / 'ok' 可用 / 'missing' 没有（静态托管，如 GitHub Pages）
 // 记住结果后，同一页面里所有发音按钮都直接用能播的地址，避免每次都 404 一次。
@@ -38,8 +41,10 @@ function clearButton(button) {
 player.addEventListener('ended', () => {
   clearButton(currentButton);
   currentButton = null;
+  settlePending('resolve', 'ended');
 });
 player.addEventListener('error', () => {
+  settlePending('reject', new Error('audio-error'));
   if (!currentButton) return;
   const button = currentButton;
   clearButton(button);
@@ -54,11 +59,52 @@ export function stopAudio() {
   player.pause();
   clearButton(currentButton);
   currentButton = null;
+  settlePending('reject', 'stopped');
+}
+
+function settlePending(kind, value) {
+  if (!pendingClip) return;
+  const waiter = pendingClip;
+  pendingClip = null;
+  if (kind === 'resolve') waiter.resolve(value);
+  else waiter.reject(value);
+}
+
+/**
+ * 播放一段音频并等待它真正播完（ended 事件）。
+ * 循环播放用它来驱动"播完 → 间隔 → 下一段"，不靠估算音频长度。
+ * 暂停时不会 resolve（音频没播完），恢复后会自然继续。
+ */
+export async function playAndWait(url, button) {
+  if (!url) throw new Error('missing-url');
+  settlePending('reject', 'superseded');
+  const started = await playUrl(url, button);
+  if (!started) throw new Error('play-failed');
+  if (player.ended) return 'ended';
+  const token = clipToken;
+  return new Promise((resolve, reject) => {
+    pendingClip = { resolve, reject, token };
+  });
+}
+
+let clipToken = 0;
+
+export function pauseAudio() {
+  try { player.pause(); } catch (_) { /* ignore */ }
+}
+
+export async function resumeAudio() {
+  try {
+    await player.play();
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 export async function playUrl(url, button, forceReload = false) {
-  if (!url) return;
-  if (button && button.disabled && !forceReload) return;
+  if (!url) return false;
+  if (button && button.disabled && !forceReload) return false;
 
   const isSame = player.dataset.url === url && player.src && !forceReload;
   if (currentButton && currentButton !== button) clearButton(currentButton);
@@ -72,11 +118,13 @@ export async function playUrl(url, button, forceReload = false) {
     if (button) button.classList.add('playing');
     try {
       await player.play();
+      return true;
     } catch (err) {
       // 再试一次：先 load() 再播（移动端 Safari/Chrome 在资源被释放后常见）
       try {
         player.load();
         await player.play();
+        return true;
       } catch (err2) {
         clearButton(button);
         currentButton = null;
@@ -84,9 +132,10 @@ export async function playUrl(url, button, forceReload = false) {
           label: '重试',
           onClick: () => playUrl(url, button, true),
         });
+        return false;
       }
     }
-    return;
+    return true;
   }
 
   if (button) {
@@ -96,6 +145,8 @@ export async function playUrl(url, button, forceReload = false) {
   }
   player.dataset.url = url;
   player.src = url;
+  clipToken += 1;
+  settlePending('reject', 'superseded');
   try {
     await player.play();
     if (button) {
@@ -104,12 +155,53 @@ export async function playUrl(url, button, forceReload = false) {
       const icon = button.querySelector('.wave');
       if (icon) icon.textContent = '❚❚';
     }
+    return true;
   } catch (err) {
     clearButton(button);
     currentButton = null;
     if (forceReload) {
       toast('仍然无法播放该发音音频', 'err');
     }
+    return false;
+  }
+}
+
+/**
+ * 解析某个单词某个口音"真正能播"的地址：
+ * 优先站点代理（有 /api/audio 时），否则退回词典直链。
+ * 返回 {url} / {missing:true} / {retry:true}，并可在按钮上缓存结果。
+ */
+export async function resolveAudioUrl(word, accent, cacheTarget = null) {
+  const cached = cacheTarget && cacheTarget.dataset.playUrl;
+  if (cached) return { url: cached };
+  const remember = (url) => {
+    if (cacheTarget) {
+      cacheTarget.dataset.playUrl = url;
+      if (!cacheTarget.dataset.status || cacheTarget.dataset.status === 'unknown') {
+        cacheTarget.dataset.status = 'available';
+      }
+    }
+    return { url };
+  };
+  if (proxyState === 'missing') return remember(directAudioUrl(word, accent));
+
+  const proxyUrl = audioUrlFor(word, accent);
+  try {
+    const res = await fetch(proxyUrl, { headers: { Range: 'bytes=0-1' } });
+    if (res.ok || res.status === 206) {
+      proxyState = 'ok';
+      return remember(proxyUrl);
+    }
+    let payload = null;
+    try { payload = await res.json(); } catch (_) { payload = null; }
+    if (payload && payload.error !== undefined) {
+      return payload.retryable ? { retry: true } : { missing: true };
+    }
+    proxyState = 'missing';
+    return remember(directAudioUrl(word, accent));
+  } catch (_) {
+    proxyState = 'missing';
+    return remember(directAudioUrl(word, accent));
   }
 }
 
@@ -224,51 +316,17 @@ export async function playWordAudio(word, accent, button) {
   if (accent !== 'uk' && accent !== 'us') return;
   const target = button || null;
   const status = target ? target.dataset.status : 'unknown';
-
-  // 已经知道哪个地址能播 → 一直用它（重播走的也是同一个地址，才能重复播放）
-  let url = target && target.dataset.playUrl;
-
-  if (!url) {
-    if (proxyState === 'missing') {
-      url = directAudioUrl(word, accent);
-    } else {
-      const proxyUrl = audioUrlFor(word, accent);
-      try {
-        const res = await fetch(proxyUrl, { headers: { Range: 'bytes=0-1' } });
-        if (res.ok || res.status === 206) {
-          proxyState = 'ok';
-          url = proxyUrl;
-        } else {
-          let payload = null;
-          try { payload = await res.json(); } catch (_) { payload = null; }
-          if (payload && payload.error !== undefined) {
-            // 是我们的代理返回的明确结果
-            if (payload.retryable) {
-              toast('网络异常，暂时无法获取发音，请重试', 'err');
-              return;
-            }
-            markAudioMissing(target);
-            toast(`“${(word && word.lemma) || ''}” 没有${accent === 'uk' ? '英式' : '美式'}录音`, 'err');
-            return;
-          }
-          // 404 但不是我们的 JSON → 站点没部署 /api/audio（纯静态托管）
-          proxyState = 'missing';
-          url = directAudioUrl(word, accent);
-        }
-      } catch (_) {
-        // 网络异常或跨域：退回直连地址
-        proxyState = 'missing';
-        url = directAudioUrl(word, accent);
-      }
-    }
-    if (target && url) {
-      target.dataset.playUrl = url;
-      if (!target.dataset.status || target.dataset.status === 'unknown') target.dataset.status = 'available';
-    }
+  const resolved = await resolveAudioUrl(word, accent, target);
+  if (resolved.retry) {
+    toast('网络异常，暂时无法获取发音，请重试', 'err');
+    return;
   }
-
-  if (!url) return;
-  await playUrl(url, target);
+  if (resolved.missing || !resolved.url) {
+    markAudioMissing(target);
+    toast(`“${(word && word.lemma) || ''}” 没有${accent === 'uk' ? '英式' : '美式'}录音`, 'err');
+    return;
+  }
+  await playUrl(resolved.url, target);
 }
 
 export async function probeWords(wordIds, accents = ['uk', 'us']) {
