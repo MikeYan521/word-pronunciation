@@ -295,6 +295,14 @@ tbody tr:last-child td { border-bottom: 0; }
 .word-row.loop-current .spelling { color: var(--uk); }
 
 /* ---------- loop panel ---------- */
+.loop-mode-switch {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  cursor: pointer; user-select: none;
+}
+.loop-mode-toggle { width: 18px; height: 18px; accent-color: var(--uk); cursor: pointer; }
+.loop-mode .word-row { cursor: pointer; }
+.loop-mode .word-row:hover:not(.loop-current) { background: var(--surface); }
 .loop-panel { padding: 16px 20px; }
 .loop-panel h3 { margin: 0; font-size: 16px; }
 .loop-status { margin-top: 10px; color: var(--slate); font-size: 13px; }

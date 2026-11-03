@@ -23,7 +23,8 @@ export const LOOP_DEFAULTS = {
   interval: 1,        // 每段音频结束后的间隔（秒）
   accents: "uk",      // uk | us | both
   order: "seq",       // seq | random
-  loopList: false,    // 列表播完后是否从头再来
+  loopList: false,    // 列表播完后是否从头再来（配合 autoNext）
+  autoNext: false,    // 一个词播完是否自动跳到下一个词
 };
 
 const shuffle = (items) => {
@@ -60,6 +61,7 @@ export class LoopController {
     this.rep = 0;
     this.accentPos = 0;
     this.current = null;
+    this.singleWord = false;
     this.played = 0;
     this.skipped = 0;
     this.lastError = "";
@@ -95,7 +97,9 @@ export class LoopController {
     };
   }
 
-  start(words) {
+  /** 从列表第 startIndex 个词开始播放（不传则顺序从 0 / 随机抽一个） */
+  start(words, startIndex = null, single = false) {
+    this.singleWord = single;
     this.runId += 1;
     this._clearTimer();
     try { this.stopClip(); } catch (_) { /* ignore */ }
@@ -109,7 +113,11 @@ export class LoopController {
     this.skipped = 0;
     this.lastError = "";
     this.order = this.settings.order === "random" ? shuffle(this.words.map((_, i) => i)) : [];
-    if (this.settings.order === "random" && this.order.length) {
+    if (startIndex !== null) {
+      this.index = Math.max(0, Math.min(this.words.length - 1, startIndex));
+      // 随机模式下把起点从队列里剔除，避免紧接着又抽到它
+      this.order = this.order.filter((i) => i !== this.index);
+    } else if (this.settings.order === "random" && this.order.length) {
       // 随机模式：把第一个词从队列里取出来作为起点，避免它被再抽一次
       this.index = this.order.shift();
     }
@@ -123,6 +131,28 @@ export class LoopController {
     this._clearTimer();
     this._step();
     return true;
+  }
+
+  /**
+   * 循环"单个单词"（点词触发）。
+   * words 仅用于 prev/next 与"自动下一个"，当前词必定从第 1 次开始。
+   */
+  startSingle(word, words = []) {
+    if (!word) return false;
+    const list = Array.isArray(words) && words.length ? words.slice() : [word];
+    let index = list.findIndex((item) => item.id === word.id);
+    if (index < 0) {
+      list.unshift(word);
+      index = 0;
+    }
+    return this.start(list, index, true);
+  }
+
+  /** 当前是否正在循环这个单词（含间隔等待阶段） */
+  isLoopingWord(wordId) {
+    if (this.status === "idle") return false;
+    const word = (this.current && this.current.word) || this.words[this.index];
+    return Boolean(word && word.id === wordId);
   }
 
   pause() {
@@ -155,6 +185,7 @@ export class LoopController {
     this.phase = "idle";
     this.clipActive = false;
     this.current = null;
+    this.singleWord = false;
     this.index = 0;
     this.rep = 0;
     this.accentPos = 0;
@@ -235,6 +266,11 @@ export class LoopController {
   _advanceWord() {
     this.rep = 0;
     this.accentPos = 0;
+    // 点词触发的单词语义：默认播完就停；开启"自动下一个"才继续列表
+    if (this.singleWord && !this.settings.autoNext) {
+      this._finishList();
+      return false;
+    }
     if (this.settings.order === "random") {
       if (!this.order.length) {
         if (!this.settings.loopList && this.played > 0) { this._finishList(); return false; }
