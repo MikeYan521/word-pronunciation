@@ -78,13 +78,28 @@ function settlePending(kind, value) {
 export async function playAndWait(url, button) {
   if (!url) throw new Error('missing-url');
   settlePending('reject', 'superseded');
-  const started = await playUrl(url, button);
-  if (!started) throw new Error('play-failed');
-  if (player.ended) return 'ended';
-  const token = clipToken;
-  return new Promise((resolve, reject) => {
-    pendingClip = { resolve, reject, token };
+  let resolveWait;
+  let rejectWait;
+  const completion = new Promise((resolve, reject) => {
+    resolveWait = resolve;
+    rejectWait = reject;
   });
+  // playUrl 返回 false 的路径可能不会再 await 这个 Promise；先挂一个空
+  // handler，避免 error/stop 已经拒绝后产生未处理异常。
+  completion.catch(() => {});
+  const waiter = { resolve: resolveWait, reject: rejectWait };
+
+  // 必须在 play() 之前登记等待器：音频很短或重复播放同一 URL 时，
+  // ended 可能在 play() 返回前就发生，晚注册会漏掉事件并提前重启。
+  pendingClip = waiter;
+  try {
+    const started = await playUrl(url, button, false, { keepPending: true });
+    if (!started) throw new Error('play-failed');
+    return await completion;
+  } catch (err) {
+    if (pendingClip === waiter) pendingClip = null;
+    throw err;
+  }
 }
 
 let clipToken = 0;
@@ -102,19 +117,28 @@ export async function resumeAudio() {
   }
 }
 
-export async function playUrl(url, button, forceReload = false) {
+export async function playUrl(url, button, forceReload = false, { keepPending = false } = {}) {
   if (!url) return false;
   if (button && button.disabled && !forceReload) return false;
 
   const isSame = player.dataset.url === url && player.src && !forceReload;
+  if (!keepPending) settlePending('reject', 'superseded');
   if (currentButton && currentButton !== button) clearButton(currentButton);
   currentButton = button || null;
 
   if (isSame) {
-    // repeat the same clip without overlap
+    // 重复同一发音：先回到文件开头再播放。readyState 为 0 时直接 load()，
+    // 避免在 metadata 尚未就绪时设置 currentTime 被浏览器忽略。
     player.pause();
-    try { player.currentTime = 0; } catch (_) { /* 某些浏览器在 metadata 未就绪时会抛错 */ }
-    if (player.readyState === 0) player.load();   // 资源被浏览器回收时重新加载
+    if (player.readyState === 0) {
+      player.load();
+    } else {
+      try {
+        player.currentTime = 0;
+      } catch (_) {
+        player.load();
+      }
+    }
     if (button) button.classList.add('playing');
     try {
       await player.play();
@@ -146,7 +170,6 @@ export async function playUrl(url, button, forceReload = false) {
   player.dataset.url = url;
   player.src = url;
   clipToken += 1;
-  settlePending('reject', 'superseded');
   try {
     await player.play();
     if (button) {
