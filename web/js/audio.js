@@ -15,6 +15,7 @@ const player = new Audio();
 player.preload = 'auto';
 
 let currentButton = null;
+let loopPaused = false;
 
 // 循环播放等待器：playAndWait() 用它把"本段播完(ended)"变成 Promise
 let pendingClip = null;
@@ -56,6 +57,8 @@ player.addEventListener('error', () => {
 });
 
 export function stopAudio() {
+  clipToken += 1;
+  loopPaused = false;
   player.pause();
   clearButton(currentButton);
   currentButton = null;
@@ -78,6 +81,8 @@ function settlePending(kind, value) {
 export async function playAndWait(url, button) {
   if (!url) throw new Error('missing-url');
   settlePending('reject', 'superseded');
+  loopPaused = false;
+  const token = ++clipToken;
   let resolveWait;
   let rejectWait;
   const completion = new Promise((resolve, reject) => {
@@ -93,7 +98,11 @@ export async function playAndWait(url, button) {
   // ended 可能在 play() 返回前就发生，晚注册会漏掉事件并提前重启。
   pendingClip = waiter;
   try {
-    const started = await playUrl(url, button, false, { keepPending: true });
+    const started = await playUrl(url, button, false, {
+      keepPending: true,
+      restartFromBeginning: true,
+      token,
+    });
     if (!started) throw new Error('play-failed');
     return await completion;
   } catch (err) {
@@ -104,11 +113,78 @@ export async function playAndWait(url, button) {
 
 let clipToken = 0;
 
+/** 等待一个媒体事件；超时返回 false，不估算音频长度。 */
+function waitForMediaEvent(media, type, timeoutMs) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      media.removeEventListener(type, onEvent);
+      media.removeEventListener('error', onError);
+      resolve(ok);
+    };
+    const onEvent = () => finish(true);
+    const onError = () => finish(false);
+    media.addEventListener(type, onEvent, { once: true });
+    media.addEventListener('error', onError, { once: true });
+    timer = setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+/**
+ * 把媒体真正退回起点后再交给 play()。
+ * 移动浏览器在 ended 后立即设置 currentTime=0 可能尚未完成 seek，
+ * 此时直接 play() 会从旧位置继续，听起来像词首被截掉。
+ */
+async function rewindToStart(media) {
+  media.pause();
+  if (media.readyState === 0) {
+    media.load();
+    await waitForMediaEvent(media, 'loadedmetadata', 1200);
+    return;
+  }
+  if (media.currentTime <= 0.001 && !media.ended) return;
+
+  const seeked = waitForMediaEvent(media, 'seeked', 350);
+  try {
+    media.currentTime = 0;
+  } catch (_) {
+    media.load();
+    await waitForMediaEvent(media, 'canplay', 1200);
+    return;
+  }
+  if (await seeked) return;
+
+  // 少数移动浏览器不派发 seeked：完整 load 一次，确保重新从文件头解码。
+  media.load();
+  await waitForMediaEvent(media, 'canplay', 1200);
+}
+
+/**
+ * 循环重复专用：重新装载同一 URL，强制媒体从文件头重新解码。
+ * 比单纯 currentTime=0 更慢一点，但能规避移动端 seek 未完成导致的截音。
+ */
+async function reloadForReplay(media) {
+  // ended 触发时系统输出缓冲里可能还有最后几十毫秒；立刻 load() 会把
+  // 这段尾音刷掉。留一个很小的技术缓冲，不参与“播放间隔”的时长计算。
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  media.pause();
+  media.load();
+  await waitForMediaEvent(media, 'canplay', 1600);
+  // 给浏览器一个宏任务，让 seek/解码状态在 play() 前稳定下来。
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 export function pauseAudio() {
+  loopPaused = true;
   try { player.pause(); } catch (_) { /* ignore */ }
 }
 
 export async function resumeAudio() {
+  loopPaused = false;
   try {
     await player.play();
     return true;
@@ -117,28 +193,31 @@ export async function resumeAudio() {
   }
 }
 
-export async function playUrl(url, button, forceReload = false, { keepPending = false } = {}) {
+export async function playUrl(
+  url,
+  button,
+  forceReload = false,
+  { keepPending = false, restartFromBeginning = false, token = null } = {},
+) {
   if (!url) return false;
   if (button && button.disabled && !forceReload) return false;
+  if (token !== null && token !== clipToken) return false;
 
   const isSame = player.dataset.url === url && player.src && !forceReload;
-  if (!keepPending) settlePending('reject', 'superseded');
+  if (!keepPending) {
+    clipToken += 1;
+    settlePending('reject', 'superseded');
+  }
   if (currentButton && currentButton !== button) clearButton(currentButton);
   currentButton = button || null;
 
   if (isSame) {
     // 重复同一发音：先回到文件开头再播放。readyState 为 0 时直接 load()，
     // 避免在 metadata 尚未就绪时设置 currentTime 被浏览器忽略。
-    player.pause();
-    if (player.readyState === 0) {
-      player.load();
-    } else {
-      try {
-        player.currentTime = 0;
-      } catch (_) {
-        player.load();
-      }
-    }
+    if (restartFromBeginning) await reloadForReplay(player);
+    else await rewindToStart(player);
+    if (token !== null && token !== clipToken) return false;
+    if (token !== null && loopPaused) return true;
     if (button) button.classList.add('playing');
     try {
       await player.play();
@@ -169,7 +248,8 @@ export async function playUrl(url, button, forceReload = false, { keepPending = 
   }
   player.dataset.url = url;
   player.src = url;
-  clipToken += 1;
+  if (token !== null && token !== clipToken) return false;
+  if (token !== null && loopPaused) return true;
   try {
     await player.play();
     if (button) {

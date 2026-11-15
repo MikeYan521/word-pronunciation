@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { el, mount, loadingCard, progressBar } from '../ui.js';
-import { navigate } from '../app.js';
+import { navigate } from '../app.js?v=20261115-3';
 
 export async function render(root, params = {}) {
   mount(root, loadingCard('正在统计…'));

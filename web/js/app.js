@@ -4,10 +4,10 @@ import { api } from './api.js';
 import * as home from './pages/home.js';
 import * as book from './pages/book.js';
 import * as parsePage from './pages/parse.js';
-import * as chapter from './pages/chapter.js';
-import * as word from './pages/word.js';
+import * as chapter from './pages/chapter.js?v=20261115-3';
+import * as word from './pages/word.js?v=20261115-3';
 import * as stats from './pages/stats.js';
-import { runUnmount } from './lifecycle.js';
+import { runUnmount } from './lifecycle.js?v=20261115-3';
 
 const view = document.getElementById('view');
 

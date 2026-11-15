@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js';
+import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js?v=20261115-3';
 import { audioUrlFor } from '../api.js';
 
 export async function render(root, wordId) {

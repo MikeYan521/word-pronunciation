@@ -2,12 +2,12 @@
 
 import { api } from '../api.js';
 import { el, mount, toast, loadingCard, progressBar, modal } from '../ui.js';
-import { navigate } from '../app.js';
+import { navigate } from '../app.js?v=20261115-3';
 import { soundButtons, probeWords, playWordAudio, ttsSupport, speak,
-         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js';
+         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js?v=20261115-3';
 import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
-         LOOP_DEFAULTS } from '../core/loop.js';
-import { onUnmount } from '../lifecycle.js';
+         LOOP_DEFAULTS } from '../core/loop.js?v=20261115-3';
+import { onUnmount } from '../lifecycle.js?v=20261115-3';
 
 const state = {
   words: [],
