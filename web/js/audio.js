@@ -8,7 +8,7 @@
 // * Speech synthesis is only ever used as an explicitly-labelled fallback, and
 //   only when the device really has an en-GB / en-US voice.
 
-import { api, audioUrlFor } from './api.js';
+import { api, audioUrlFor, backendMode } from './api.js?v=20261116-2';
 import { toast } from './ui.js';
 
 const player = new Audio();
@@ -16,6 +16,7 @@ player.preload = 'auto';
 
 let currentButton = null;
 let loopPaused = false;
+let lastPlaybackNoticeAt = 0;
 
 // 循环播放等待器：playAndWait() 用它把"本段播完(ended)"变成 Promise
 let pendingClip = null;
@@ -32,11 +33,44 @@ function directAudioUrl(word, accent) {
   return `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&type=${type}`;
 }
 
+function rememberResolvedUrl(url, cacheTarget) {
+  if (cacheTarget) {
+    cacheTarget.dataset.playUrl = url;
+    if (!cacheTarget.dataset.status || cacheTarget.dataset.status === 'unknown') {
+      cacheTarget.dataset.status = 'available';
+    }
+  }
+  return { url };
+}
+
+/**
+ * 已经确定部署模式时同步得到音频地址。
+ * 必须在点击事件的同一任务里调用 play()，否则移动浏览器会把手势当成失效，
+ * 静默拒绝播放。GitHub Pages 直接使用词典录音，本地服务使用 /api/audio。
+ */
+export function immediateAudioUrl(word, accent, cacheTarget = null) {
+  const mode = backendMode();
+  if (mode === 'static' || proxyState === 'missing') {
+    return rememberResolvedUrl(directAudioUrl(word, accent), cacheTarget);
+  }
+  if (mode === 'server') {
+    return rememberResolvedUrl(audioUrlFor(word, accent), cacheTarget);
+  }
+  return null;
+}
+
 function clearButton(button) {
   if (!button) return;
   button.classList.remove('loading', 'playing');
   const icon = button.querySelector('.wave');
   if (icon) icon.textContent = '▶';
+}
+
+function notifyPlaybackError(message) {
+  const now = Date.now();
+  if (now - lastPlaybackNoticeAt < 1500) return;
+  lastPlaybackNoticeAt = now;
+  toast(message, 'err');
 }
 
 player.addEventListener('ended', () => {
@@ -46,7 +80,10 @@ player.addEventListener('ended', () => {
 });
 player.addEventListener('error', () => {
   settlePending('reject', new Error('audio-error'));
-  if (!currentButton) return;
+  if (!currentButton) {
+    notifyPlaybackError('音频加载失败，请检查网络后重新点击');
+    return;
+  }
   const button = currentButton;
   clearButton(button);
   currentButton = null;
@@ -277,23 +314,18 @@ export async function playUrl(
 export async function resolveAudioUrl(word, accent, cacheTarget = null) {
   const cached = cacheTarget && cacheTarget.dataset.playUrl;
   if (cached) return { url: cached };
-  const remember = (url) => {
-    if (cacheTarget) {
-      cacheTarget.dataset.playUrl = url;
-      if (!cacheTarget.dataset.status || cacheTarget.dataset.status === 'unknown') {
-        cacheTarget.dataset.status = 'available';
-      }
-    }
-    return { url };
-  };
-  if (proxyState === 'missing') return remember(directAudioUrl(word, accent));
+  const immediate = immediateAudioUrl(word, accent, cacheTarget);
+  if (immediate) return immediate;
+  if (proxyState === 'missing') {
+    return rememberResolvedUrl(directAudioUrl(word, accent), cacheTarget);
+  }
 
   const proxyUrl = audioUrlFor(word, accent);
   try {
     const res = await fetch(proxyUrl, { headers: { Range: 'bytes=0-1' } });
     if (res.ok || res.status === 206) {
       proxyState = 'ok';
-      return remember(proxyUrl);
+      return rememberResolvedUrl(proxyUrl, cacheTarget);
     }
     let payload = null;
     try { payload = await res.json(); } catch (_) { payload = null; }
@@ -301,10 +333,10 @@ export async function resolveAudioUrl(word, accent, cacheTarget = null) {
       return payload.retryable ? { retry: true } : { missing: true };
     }
     proxyState = 'missing';
-    return remember(directAudioUrl(word, accent));
+    return rememberResolvedUrl(directAudioUrl(word, accent), cacheTarget);
   } catch (_) {
     proxyState = 'missing';
-    return remember(directAudioUrl(word, accent));
+    return rememberResolvedUrl(directAudioUrl(word, accent), cacheTarget);
   }
 }
 
@@ -418,7 +450,12 @@ export function markAudioMissing(button) {
 export async function playWordAudio(word, accent, button) {
   if (accent !== 'uk' && accent !== 'us') return;
   const target = button || null;
-  const status = target ? target.dataset.status : 'unknown';
+  const immediate = immediateAudioUrl(word, accent, target);
+  if (immediate) {
+    const started = await playUrl(immediate.url, target);
+    if (!started) notifyPlaybackError('播放失败，请重新点击该单词');
+    return;
+  }
   const resolved = await resolveAudioUrl(word, accent, target);
   if (resolved.retry) {
     toast('网络异常，暂时无法获取发音，请重试', 'err');
@@ -429,7 +466,8 @@ export async function playWordAudio(word, accent, button) {
     toast(`“${(word && word.lemma) || ''}” 没有${accent === 'uk' ? '英式' : '美式'}录音`, 'err');
     return;
   }
-  await playUrl(resolved.url, target);
+  const started = await playUrl(resolved.url, target);
+  if (!started) notifyPlaybackError('播放失败，请重新点击该单词');
 }
 
 export async function probeWords(wordIds, accents = ['uk', 'us']) {

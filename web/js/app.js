@@ -1,13 +1,13 @@
 // Bootstrap: health chip + hash router.
 
-import { api } from './api.js';
-import * as home from './pages/home.js';
-import * as book from './pages/book.js';
-import * as parsePage from './pages/parse.js';
-import * as chapter from './pages/chapter.js?v=20261116-1';
-import * as word from './pages/word.js?v=20261116-1';
-import * as stats from './pages/stats.js';
-import { runUnmount } from './lifecycle.js?v=20261116-1';
+import { api } from './api.js?v=20261116-2';
+import * as home from './pages/home.js?v=20261116-2';
+import * as book from './pages/book.js?v=20261116-2';
+import * as parsePage from './pages/parse.js?v=20261116-2';
+import * as chapter from './pages/chapter.js?v=20261116-2';
+import * as word from './pages/word.js?v=20261116-2';
+import * as stats from './pages/stats.js?v=20261116-2';
+import { runUnmount } from './lifecycle.js?v=20261116-2';
 
 const view = document.getElementById('view');
 

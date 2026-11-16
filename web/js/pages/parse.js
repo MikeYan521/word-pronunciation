@@ -5,9 +5,9 @@
 //   ! 待核对 —— 依据不足（目录推算、边界校正、范围可疑）
 // 点击 ✎ 可以直接修改起止页，只会重新处理该范围（不会重新 OCR 整本书）。
 
-import { api } from '../api.js';
+import { api } from '../api.js?v=20261116-2';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-1';
+import { navigate } from '../app.js?v=20261116-2';
 
 const SOURCE_LABEL = {
   toc: '目录推算',

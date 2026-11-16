@@ -1,6 +1,6 @@
-import { api } from '../api.js';
+import { api } from '../api.js?v=20261116-2';
 import { el, mount, toast, progressBar, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-1';
+import { navigate } from '../app.js?v=20261116-2';
 
 export async function render(root, textbookId) {
   mount(root, loadingCard('正在读取单词书…'));

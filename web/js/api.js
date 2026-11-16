@@ -6,6 +6,7 @@
 // 两种实现的对外方法完全一致，页面代码无需感知差异。
 
 let implPromise = null;
+let implMode = null;
 
 async function detectImplementation() {
   try {
@@ -13,11 +14,13 @@ async function detectImplementation() {
     const res = await fetch("api/health", { cache: "no-store" });
     if (res.ok) {
       const mod = await import("./api.server.js");
+      implMode = "server";
       return mod.serverApi;
     }
   } catch { /* 静态模式：没有 /api/health */ }
   try {
     const mod = await import("./api.static.js");
+    implMode = "static";
     return mod.staticApi;
   } catch (err) {
     // 上传不完整时（缺 js/api.static.js）给一句能照着做的提示，
@@ -34,6 +37,11 @@ async function detectImplementation() {
 export function backend() {
   if (!implPromise) implPromise = detectImplementation();
   return implPromise;
+}
+
+/** 同步返回已经检测出的后端类型；首次页面数据请求完成后即可使用。 */
+export function backendMode() {
+  return implMode;
 }
 
 /** 发音 URL（同步）：两种后端都支持按 word 查询，因此可以直接拼接。 */

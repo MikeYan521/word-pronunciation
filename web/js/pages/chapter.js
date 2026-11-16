@@ -1,13 +1,14 @@
 // Chapter vocabulary page: IPA, dual pronunciation, progress, filtering.
 
-import { api } from '../api.js';
+import { api } from '../api.js?v=20261116-2';
 import { el, mount, toast, loadingCard, progressBar, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-1';
+import { navigate } from '../app.js?v=20261116-2';
 import { soundButtons, probeWords, playWordAudio, ttsSupport, speak,
-         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js?v=20261116-1';
+         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl,
+         immediateAudioUrl } from '../audio.js?v=20261116-2';
 import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
-         LOOP_DEFAULTS } from '../core/loop.js?v=20261116-1';
-import { onUnmount } from '../lifecycle.js?v=20261116-1';
+         LOOP_DEFAULTS } from '../core/loop.js?v=20261116-2';
+import { onUnmount } from '../lifecycle.js?v=20261116-2';
 
 const state = {
   words: [],
@@ -403,6 +404,7 @@ export async function render(root, chapterId) {
   }
 
   let lastLoopWordId = null;
+  let lastLoopErrorShown = '';
   let loopRedrawGuard = false;
   let loopReady = false;
 
@@ -568,8 +570,16 @@ export async function render(root, chapterId) {
         applyLoopHighlight(false);
       }
     }
-    if (snapshot.lastError) loopStatus.title = snapshot.lastError;
-    else loopStatus.removeAttribute('title');
+    if (snapshot.lastError) {
+      loopStatus.title = snapshot.lastError;
+      if (snapshot.lastError !== lastLoopErrorShown) {
+        lastLoopErrorShown = snapshot.lastError;
+        toast(snapshot.lastError, 'err');
+      }
+    } else {
+      lastLoopErrorShown = '';
+      loopStatus.removeAttribute('title');
+    }
 
     const active = snapshot.status !== 'idle';
     loopBar.firstChild.style.width = active
@@ -631,6 +641,8 @@ export async function render(root, chapterId) {
 
   const loop = new LoopController({
     playClip: async (word, accent) => {
+      const immediate = immediateAudioUrl(word, accent);
+      if (immediate) return playAndWait(immediate.url, null);
       const resolved = await resolveAudioUrl(word, accent);
       if (resolved.retry) throw new Error('网络异常');
       if (resolved.missing || !resolved.url) throw new Error('没有可用音频');
