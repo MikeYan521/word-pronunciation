@@ -2,12 +2,12 @@
 
 import { api } from '../api.js';
 import { el, mount, toast, loadingCard, progressBar, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261115-3';
+import { navigate } from '../app.js?v=20261116-1';
 import { soundButtons, probeWords, playWordAudio, ttsSupport, speak,
-         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js?v=20261115-3';
+         playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl } from '../audio.js?v=20261116-1';
 import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
-         LOOP_DEFAULTS } from '../core/loop.js?v=20261115-3';
-import { onUnmount } from '../lifecycle.js?v=20261115-3';
+         LOOP_DEFAULTS } from '../core/loop.js?v=20261116-1';
+import { onUnmount } from '../lifecycle.js?v=20261116-1';
 
 const state = {
   words: [],
@@ -181,13 +181,13 @@ export async function render(root, chapterId) {
     ]);
 
     row.append(main, ipa, actions);
-    // 全局循环模式下，点击词条任意非操作区域即循环该词；关闭时保留
-    // 原来的单次播放/详情链接行为。按钮、输入框等仍交给各自的事件处理。
+    // 点击词条正文即可试听：循环模式开启时连续播放，关闭时只播放一次。
+    // 发音、收藏、掌握和详情按钮仍分别执行自己的操作。
     row.addEventListener('click', (event) => {
-      if (!loopModeEnabled) return;
       if (event.target.closest('button, input, select, textarea')) return;
       event.preventDefault();
-      startLoopForWord(word);
+      if (loopModeEnabled) startLoopForWord(word);
+      else playWordOnce(word, row);
     });
     return row;
   }
@@ -438,11 +438,22 @@ export async function render(root, chapterId) {
 
   const loopStatus = el('div', { class: 'loop-status small', text: '循环播放：未开始' });
   const loopBar = el('div', { class: 'progress loop-progress' }, [el('span', { style: 'width:0%' })]);
-  const loopModeToggle = el('input', { type: 'checkbox', class: 'loop-mode-toggle' });
+  const loopModeButton = el('button', {
+    type: 'button',
+    class: 'loop-mode-btn',
+    'aria-pressed': 'false',
+    title: '开启后点击任意单词即可连续播放',
+  }, [
+    el('span', { class: 'loop-mode-btn-icon' }),
+    el('span', { class: 'loop-mode-btn-label', text: '循环模式 · 关闭' }),
+  ]);
   const loopPauseBtn = el('button', { class: 'btn small', text: '⏸ 暂停', disabled: true });
   const loopStopBtn = el('button', { class: 'btn small', text: '⏹ 停止', disabled: true });
   const loopPrevBtn = el('button', { class: 'icon-btn', title: '上一个单词', text: '⏮' });
   const loopNextBtn = el('button', { class: 'icon-btn', title: '下一个单词', text: '⏭' });
+  const loopPlaybackControls = el('div', { class: 'loop-controls', hidden: true }, [
+    loopPrevBtn, loopPauseBtn, loopStopBtn, loopNextBtn,
+  ]);
   const loopSettingsBox = el('div', { class: 'loop-settings', hidden: true });
   const loopSettingsBtn = el('button', {
     class: 'btn small ghost', text: '⚙ 设置',
@@ -450,15 +461,14 @@ export async function render(root, chapterId) {
   });
 
   const loopPanel = el('div', { class: 'card loop-panel' }, [
-    el('div', { class: 'row' }, [
-      el('label', { class: 'loop-mode-switch', title: '开启后点击任意单词即可循环播放' }, [
-        loopModeToggle,
-        el('span', { text: '🔁 循环模式' }),
+    el('div', { class: 'loop-panel-head' }, [
+      el('div', { class: 'loop-panel-copy' }, [
+        el('h3', { text: '循环播放' }),
+        el('div', { class: 'tiny muted', text: '开启后点击单词连续播放；关闭时点击单词试听一次。' }),
       ]),
-      el('span', { class: 'spacer' }),
-      loopPrevBtn, loopPauseBtn, loopStopBtn, loopNextBtn,
-      loopSettingsBtn,
+      el('div', { class: 'loop-panel-actions' }, [loopModeButton, loopSettingsBtn]),
     ]),
+    loopPlaybackControls,
     loopStatus,
     loopBar,
     loopSettingsBox,
@@ -519,13 +529,25 @@ export async function render(root, chapterId) {
 
   let loopModeEnabled = false;
 
+  function syncLoopModeUI() {
+    loopModeButton.setAttribute('aria-pressed', String(loopModeEnabled));
+    loopModeButton.classList.toggle('on', loopModeEnabled);
+    loopModeButton.querySelector('.loop-mode-btn-label').textContent =
+      loopModeEnabled ? '循环模式 · 开启' : '循环模式 · 关闭';
+    loopModeButton.title = loopModeEnabled
+      ? '关闭后点击单词只播放一次'
+      : '开启后点击单词连续播放';
+    loopPlaybackControls.hidden = !loopModeEnabled;
+    listHost.classList.toggle('loop-mode', loopModeEnabled);
+  }
+
   /** 刷新面板状态与按钮可用性（循环模式开关 / 播放状态都会调用） */
   function updateLoopControls(snapshot, event) {
     const total = snapshot.repeatTotal === Infinity ? '∞' : snapshot.repeatTotal;
     const accentLabel = snapshot.accent === 'uk' ? '英式' : '美式';
     if (snapshot.status === 'idle') {
       if (!loopModeEnabled) {
-        loopStatus.textContent = '循环模式已关闭 · 点击发音按钮播放单次';
+        loopStatus.textContent = '循环模式已关闭 · 点击单词或发音按钮试听一次';
       } else {
         loopStatus.textContent = event === 'completed'
           ? `循环完成：共播放 ${snapshot.played} 段 · 点击任意单词继续`
@@ -560,10 +582,35 @@ export async function render(root, chapterId) {
     loopNextBtn.disabled = !active;
   }
 
-  /** 点击单词：循环模式下开始/切换循环；点当前正在循环的词不做任何事 */
+  /** 普通模式：点击单词播放一次；优先使用设置中的口音。 */
+  function playWordOnce(word, row) {
+    const preferred = loop.settings.accents === 'us' ? 'us' : 'uk';
+    const accents = preferred === 'us' ? ['us', 'uk'] : ['uk', 'us'];
+    let target = null;
+    for (const accent of accents) {
+      const candidate = row.querySelector(`.sound-btn[data-accent="${accent}"]`);
+      if (candidate && !candidate.disabled) {
+        target = candidate;
+        break;
+      }
+    }
+    if (!target) {
+      // 之前校验为 missing 的按钮会处于 disabled 状态，但直连录音可能已恢复。
+      // 行点击不依赖按钮启用状态，强制再尝试一次真实音频。
+      playWordAudio(word, preferred, null).catch(() => {});
+      return;
+    }
+    playWordAudio(word, target.dataset.accent, target).catch(() => {});
+  }
+
+  /** 点击单词：循环模式下开始/切换循环；当前词暂停时则继续。 */
   function startLoopForWord(word) {
     if (!loopModeEnabled || !word) return;
-    if (loop.isLoopingWord(word.id)) return;      // 不重置当前进度、不新建任务
+    if (loop.isLoopingWord(word.id)) {
+      // 同一个词不重建任务；如果它已暂停，点击该词等同继续播放。
+      if (loop.status === 'paused') loop.resume();
+      return;
+    }
     stopAudio();
     const started = loop.startSingle(word, visibleWords());
     if (!started) {
@@ -576,8 +623,7 @@ export async function render(root, chapterId) {
 
   function setLoopMode(enabled) {
     loopModeEnabled = Boolean(enabled);
-    loopModeToggle.checked = loopModeEnabled;
-    listHost.classList.toggle('loop-mode', loopModeEnabled);
+    syncLoopModeUI();
     if (!loopModeEnabled && loop.isActive()) loop.stop();  // 关闭即停止当前循环任务
     saveLoopSettings(loop.settings);
     updateLoopControls(loop.snapshot(), null);
@@ -598,7 +644,7 @@ export async function render(root, chapterId) {
   loopReady = true;
   loop.setSettings(initialLoop);
 
-  loopModeToggle.addEventListener('change', () => setLoopMode(loopModeToggle.checked));
+  loopModeButton.addEventListener('click', () => setLoopMode(!loopModeEnabled));
   loopPauseBtn.addEventListener('click', () => {
     if (loop.status === 'paused') loop.resume();
     else if (loop.status !== 'idle') loop.pause();
@@ -609,8 +655,7 @@ export async function render(root, chapterId) {
 
   // 恢复上次的开关状态（默认关闭 = 普通单次播放）
   loopModeEnabled = Boolean(initialLoop.enabled);
-  loopModeToggle.checked = loopModeEnabled;
-  listHost.classList.toggle('loop-mode', loopModeEnabled);
+  syncLoopModeUI();
   updateLoopControls(loop.snapshot(), null);
 
   onUnmount(() => loop.stop());

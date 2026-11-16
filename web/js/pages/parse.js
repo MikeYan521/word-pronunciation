@@ -7,7 +7,7 @@
 
 import { api } from '../api.js';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261115-3';
+import { navigate } from '../app.js?v=20261116-1';
 
 const SOURCE_LABEL = {
   toc: '目录推算',
