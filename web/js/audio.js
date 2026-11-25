@@ -8,7 +8,7 @@
 // * Speech synthesis is only ever used as an explicitly-labelled fallback, and
 //   only when the device really has an en-GB / en-US voice.
 
-import { api, audioUrlFor, backendMode } from './api.js?v=20261116-2';
+import { api, audioUrlFor, backendMode } from './api.js?v=20261125-1';
 import { toast } from './ui.js';
 
 const player = new Audio();

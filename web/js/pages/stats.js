@@ -1,8 +1,8 @@
 // 学习统计：词条数量、已获取释义/音标、已掌握与收藏进度。
 
-import { api } from '../api.js?v=20261116-2';
+import { api } from '../api.js?v=20261125-1';
 import { el, mount, loadingCard, progressBar } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-2';
+import { navigate } from '../app.js?v=20261125-1';
 
 export async function render(root, params = {}) {
   mount(root, loadingCard('正在统计…'));

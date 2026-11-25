@@ -1,7 +1,7 @@
-import { api } from '../api.js?v=20261116-2';
+import { api } from '../api.js?v=20261125-1';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js?v=20261116-2';
-import { audioUrlFor } from '../api.js?v=20261116-2';
+import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js?v=20261125-1';
+import { audioUrlFor } from '../api.js?v=20261125-1';
 
 export async function render(root, wordId) {
   mount(root, loadingCard('正在读取词条…'));
@@ -135,21 +135,21 @@ export async function render(root, wordId) {
       el('a', { href: '#/', text: '首页' }), ' / ',
       el('a', { href: `#/word/${word.id}`, text: word.lemma }), ' 详情',
     ]),
-    el('div', { class: 'card' }, [
-      el('div', { class: 'row' }, [
+    el('div', { class: 'card word-hero' }, [
+      el('div', { class: 'word-hero-head' }, [
         el('div', { style: 'flex:1;min-width:200px' }, [
-          el('h1', { style: 'margin:0', text: word.lemma }),
+          el('h1', { class: 'word-title', style: 'margin:0', text: word.lemma }),
           (word.pos ? el('div', { class: 'small muted', text: word.pos }) : null),
         ]),
-        sounds,
       ]),
-      el('div', { style: 'display:flex;gap:22px;flex-wrap:wrap;margin:12px 0' }, [
+      el('div', { class: 'word-hero-sounds' }, [sounds]),
+      el('div', { class: 'word-ipa-strip' }, [
         el('div', {}, [el('div', { class: 'tiny muted', text: '英式 IPA' }),
-          el('div', { class: 'mono', style: 'color:var(--uk);font-size:16px', text: word.uk_ipa ? `/${word.uk_ipa}/` : '—' })]),
+          el('div', { class: 'mono uk', text: word.uk_ipa ? `/${word.uk_ipa}/` : '—' })]),
         el('div', {}, [el('div', { class: 'tiny muted', text: '美式 IPA' }),
-          el('div', { class: 'mono', style: 'color:var(--us);font-size:16px', text: word.us_ipa ? `/${word.us_ipa}/` : '—' })]),
+          el('div', { class: 'mono us', text: word.us_ipa ? `/${word.us_ipa}/` : '—' })]),
       ]),
-      el('div', { class: 'notice', text: word.meaning_cn || '（暂无中文释义，可点击“重新获取”）' }),
+      el('div', { class: 'notice word-meaning', text: word.meaning_cn || '（暂无中文释义，可点击“重新获取”）' }),
       (!word.meaning_cn && word.ocr_meaning) || (word.ocr_meaning && word.meaning_cn !== word.ocr_meaning)
         ? el('div', { class: 'small muted', style: 'margin-top:-4px' },
           [`原书释义（OCR 识别，可能有误）：${word.ocr_meaning}`])
@@ -160,12 +160,12 @@ export async function render(root, wordId) {
         el('button', { class: 'btn small ghost', text: '重新获取音标/释义', onclick: () => enrich(true) }),
       ]),
     ]),
-    el('div', { class: 'card' }, [el('h3', { text: '英美发音对照' }), ipaTable]),
-    el('div', { class: 'card' }, [
+    el('div', { class: 'card word-section' }, [el('h3', { text: '英美发音对照' }), ipaTable]),
+    el('div', { class: 'card word-section' }, [
       el('h3', { text: '出现章节' }),
       (word.chapters || []).length ? chapters : el('div', { class: 'muted small', text: '没有章节记录' }),
     ]),
-    el('div', { class: 'card' }, [
+    el('div', { class: 'card word-section' }, [
       el('h3', { text: '跟读练习（预留功能）' }),
       el('p', { class: 'small muted' },
         ['先播放标准发音，再录下自己的读音回放对比。发音评估服务尚未配置，因此这里不会给出评分。']),

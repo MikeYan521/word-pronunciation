@@ -1,6 +1,6 @@
-import { api } from '../api.js?v=20261116-2';
+import { api } from '../api.js?v=20261125-1';
 import { el, mount, toast, progressBar, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-2';
+import { navigate } from '../app.js?v=20261125-1';
 
 export async function render(root, textbookId) {
   mount(root, loadingCard('正在读取单词书…'));
@@ -97,7 +97,6 @@ export async function render(root, textbookId) {
           },
         }),
         renameBtn,
-        el('button', { class: 'btn small', text: '学习统计', onclick: () => navigate(`/stats?textbook_id=${book.id}`) }),
       ]),
     ]),
     el('div', { class: 'card', style: 'padding:0;overflow:hidden' }, [

@@ -1,14 +1,14 @@
 // Chapter vocabulary page: IPA, dual pronunciation, progress, filtering.
 
-import { api } from '../api.js?v=20261116-2';
-import { el, mount, toast, loadingCard, progressBar, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261116-2';
-import { soundButtons, probeWords, playWordAudio, ttsSupport, speak,
+import { api } from '../api.js?v=20261125-1';
+import { el, mount, toast, loadingCard, modal } from '../ui.js';
+import { navigate } from '../app.js?v=20261125-1';
+import { soundButtons, probeWords, playWordAudio,
          playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl,
-         immediateAudioUrl } from '../audio.js?v=20261116-2';
+         immediateAudioUrl } from '../audio.js?v=20261125-1';
 import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
-         LOOP_DEFAULTS } from '../core/loop.js?v=20261116-2';
-import { onUnmount } from '../lifecycle.js?v=20261116-2';
+         LOOP_DEFAULTS } from '../core/loop.js?v=20261125-1';
+import { onUnmount } from '../lifecycle.js?v=20261125-1';
 
 const state = {
   words: [],
@@ -42,50 +42,17 @@ export async function render(root, chapterId) {
   state.sort = chapter.extraction_mode === 'entries' ? 'original' : 'freq';
 
   const book = chapter.textbook || {};
-  const listHost = el('div');
-  const progressLabel = el('span', { class: 'small muted' });
-  const progressHost = el('div', { class: 'row tight', style: 'min-width:180px' }, [
-    el('span', { class: 'small muted', text: '释义/音标' }), progressBar(0, 1), progressLabel,
-  ]);
+  const listHost = el('div', { class: 'word-list' });
 
-  const searchInput = el('input', { type: 'search', placeholder: '搜索单词…', style: 'width:170px' });
+  const searchInput = el('input', {
+    type: 'search',
+    class: 'chapter-search',
+    placeholder: '搜索单词…',
+  });
   searchInput.addEventListener('input', () => {
     state.search = searchInput.value.trim().toLowerCase();
     state.renderLimit = RENDER_STEP;
     draw();
-  });
-
-  const filterChips = el('div', { class: 'chip-row' });
-  [['all', '全部'], ['todo', '未掌握'], ['fav', '收藏'], ['nofav', '未收藏']].forEach(([key, label]) => {
-    const chip = el('button', {
-      class: `chip ${state.filter === key ? 'active' : ''}`, text: label,
-      onclick: () => {
-        state.filter = key;
-        state.renderLimit = RENDER_STEP;
-        filterChips.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-        chip.classList.add('active');
-        draw();
-      },
-    });
-    filterChips.append(chip);
-  });
-
-  const sortChips = el('div', { class: 'chip-row' });
-  const sortOptions = chapter.extraction_mode === 'entries'
-    ? [['original', '按原书顺序'], ['alpha', '按字母'], ['freq', '按页码顺序']]
-    : [['freq', '按出现频率'], ['alpha', '按字母'], ['recent', '按页码']];
-  sortOptions.forEach(([key, label]) => {
-    const chip = el('button', {
-      class: `chip ${state.sort === key ? 'active' : ''}`, text: label,
-      onclick: () => {
-        state.sort = key;
-        state.renderLimit = RENDER_STEP;
-        sortChips.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-        chip.classList.add('active');
-        draw();
-      },
-    });
-    sortChips.append(chip);
   });
 
   function visibleWords() {
@@ -268,13 +235,6 @@ export async function render(root, chapterId) {
 
   const statusLine = el('div', { class: 'small muted' });
 
-  function refreshProgress() {
-    const total = state.words.length || 1;
-    mount(progressHost, el('span', { class: 'small muted', text: '释义/音标' }),
-      progressBar(state.enrichDone, total), progressLabel);
-    progressLabel.textContent = `${state.enrichDone}/${state.words.length} · 已验证发音 ${state.probeDone}`;
-  }
-
   async function enrichAll(force = false) {
     const pending = state.words.filter((w) => force || !(w.uk_ipa || w.us_ipa || w.meaning_cn));
     if (!pending.length) return;
@@ -294,7 +254,6 @@ export async function render(root, chapterId) {
           }
         });
         state.enrichDone = state.words.filter((w) => w.uk_ipa || w.us_ipa || w.meaning_cn).length;
-        refreshProgress();
         updateRows(changed);
         statusLine.textContent = `正在获取释义与音标（${Math.min(i + batchSize, pending.length)}/${pending.length}）…`;
       } catch (err) {
@@ -343,7 +302,6 @@ export async function render(root, chapterId) {
           }
         });
         state.probeDone = state.words.filter((w) => w.has_uk_audio || w.has_us_audio).length;
-        refreshProgress();
         updateRows(changed);
       } catch (err) {
         // leave the batch unverified - the buttons stay usable
@@ -672,8 +630,6 @@ export async function render(root, chapterId) {
 
   onUnmount(() => loop.stop());
 
-  const tts = ttsSupport();
-
   mount(root,
     el('div', { class: 'crumbs' }, [
       el('a', { href: '#/', text: '首页' }), ' / ',
@@ -681,25 +637,15 @@ export async function render(root, chapterId) {
     ]),
     el('div', { class: 'page-head' }, [
       el('div', {}, [
+        el('div', { class: 'eyebrow', text: 'CHAPTER' }),
         el('h1', { text: chapter.title }),
-        el('div', { class: 'sub' },
-          [`第 ${chapter.start_page}–${chapter.end_page} 页 · ${state.words.length} ` +
-           (chapter.extraction_mode === 'entries' ? '个词条（按原书排版提取）' : '个单词')]),
-      ]),
-      el('div', { class: 'row' }, [
-        progressHost,
-        el('button', { class: 'btn small', text: '刷新释义', onclick: () => enrichAll(true) }),
-        el('button', { class: 'btn small', text: '校验发音', onclick: () => probeAll() }),
       ]),
     ]),
-    el('div', { class: 'card' }, [
-      el('div', { class: 'row' }, [
+    el('div', { class: 'pixel-panel chapter-tools' }, [
+      el('div', { class: 'chapter-toolbar' }, [
         searchInput,
-        filterChips,
-        el('span', { class: 'spacer' }),
-        sortChips,
         el('button', {
-          class: 'btn small', text: '+ 添加单词',
+          class: 'btn primary small', text: '+ 添加单词',
           onclick: () => {
             const input = el('input', { type: 'text', placeholder: '输入单词，例如 environment' });
             modal({
@@ -725,19 +671,11 @@ export async function render(root, chapterId) {
           },
         }),
       ]),
-      el('p', { class: 'small muted', style: 'margin:10px 0 0' },
-        ['英式 / 美式发音分别来自真实录音，点击即可获取并缓存；' +
-         '只有确认某个口音确实没有录音时才会显示“无音频”，不会用另一种口音代替。']),
-      statusLine,
     ]),
     loopPanel,
-    el('div', { class: 'card', style: 'margin-top:14px' }, [listHost]),
-    tts.supported === false ? null : el('div', { class: 'small muted', style: 'margin-top:12px' },
-      [`备用方案：系统语音合成（${tts.uk ? '有 en-GB' : '无 en-GB'} / ${tts.us ? '有 en-US' : '无 en-US'}）。` +
-       '仅在真实音频缺失时可用于跟读对比，界面会明确标注为“合成语音”。']),
+    el('div', { class: 'pixel-panel chapter-words' }, [listHost]),
   );
 
-  refreshProgress();
   draw();
 
   // Fill in IPA/meanings in the background. Audio is resolved lazily on the
