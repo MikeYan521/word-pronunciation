@@ -1,6 +1,6 @@
-import { api } from '../api.js?v=20261125-1';
-import { el, mount, toast, progressBar, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261125-1';
+import { api } from '../api.js?v=20261125-2';
+import { el, mount, toast, loadingCard, modal } from '../ui.js';
+import { navigate } from '../app.js?v=20261125-2';
 
 export async function render(root, textbookId) {
   mount(root, loadingCard('正在读取单词书…'));
@@ -34,11 +34,6 @@ export async function render(root, textbookId) {
          (chapter.number ? ` · Chapter ${chapter.number}` : '')]),
     ]),
     el('td', { class: 'small', text: `${chapter.word_count} 词` }),
-    el('td', { style: 'min-width:150px' }, [
-      progressBar(chapter.mastered_count || 0, chapter.word_count || 1, 'green'),
-      el('div', { class: 'tiny muted', style: 'margin-top:4px' },
-        [`已掌握 ${chapter.mastered_count} / ${chapter.word_count}`]),
-    ]),
     el('td', { class: 'right', style: 'text-align:right' }, [
       el('button', { class: 'btn small', text: '学习', onclick: () => navigate(`/chapter/${chapter.id}`) }),
     ]),
@@ -103,7 +98,7 @@ export async function render(root, textbookId) {
       el('table', {}, [
         el('thead', {}, [el('tr', {}, [
           el('th', { text: '章节' }), el('th', { text: '词汇量' }),
-          el('th', { text: '学习进度' }), el('th', { style: 'text-align:right', text: '操作' }),
+          el('th', { style: 'text-align:right', text: '操作' }),
         ])]),
         el('tbody', {}, rows),
       ]),

@@ -1,6 +1,6 @@
-import { api } from '../api.js?v=20261125-1';
+import { api } from '../api.js?v=20261125-2';
 import { el, mount, toast, progressBar, loadingCard, confirmDialog } from '../ui.js';
-import { navigate } from '../app.js?v=20261125-1';
+import { navigate } from '../app.js?v=20261125-2';
 
 function bookCard(book, onChange) {
   const learned = book.learned_count || 0;

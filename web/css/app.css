@@ -947,6 +947,69 @@ tbody tr:hover td { background: var(--dialog-soft); }
   .toast { max-width: none; }
 }
 
+/* Readability pass: keep the pixel style, but never use desktop-tiny text. */
+body { font-size: 16px; line-height: 1.8; }
+h1 { font-size: 34px; }
+h2 { font-size: 28px; }
+h3 { font-size: 21px; }
+.small { font-size: 14px; line-height: 1.75; }
+.tiny { font-size: 12px; line-height: 1.7; letter-spacing: .02em; }
+.brand-text { font-size: 16px; }
+.nav a { font-size: 16px; }
+.health { font-size: 11px; line-height: 1.65; }
+.page-head h1 { font-size: 34px; }
+.page-head .sub { font-size: 14px; }
+.eyebrow { font-size: 11px; }
+.crumbs { font-size: 12px; }
+.btn { min-height: 44px; padding: 9px 20px; font-size: 14px; }
+.btn.small { min-height: 38px; padding: 6px 14px; font-size: 13px; }
+input[type=text], input[type=number], input[type=search], select, textarea {
+  min-height: 44px;
+  font-size: 15px;
+}
+label.field { font-size: 13px; }
+.tag { min-height: 24px; padding: 2px 8px; font-size: 11px; }
+.notice { font-size: 14px; line-height: 1.8; }
+.modal-head h3 { font-size: 20px; }
+.modal-body { font-size: 14px; }
+.toast { font-size: 13px; line-height: 1.7; }
+th { font-size: 13px; }
+td { font-size: 13px; }
+.book-meta span { font-size: 11px; }
+.book-card-foot .tiny { font-size: 12px; }
+.word-main .spelling { font-size: 20px; }
+.word-main .meaning { font-size: 14px; line-height: 1.7; }
+.ipa-pair { font-size: 14px; }
+.ipa-pair .k { font-size: 11px; }
+.sound-btn { min-height: 40px; padding: 6px 12px; font-size: 13px; }
+.loop-mode-btn { min-height: 42px; font-size: 13px; }
+.loop-status { font-size: 14px; line-height: 1.7; }
+.loop-settings .field,
+.loop-settings .row { font-size: 13px; }
+.word-hero-sounds .sound-btn { font-size: 15px; }
+.word-ipa-strip .mono { font-size: 19px; }
+.word-meaning { font-size: 16px; line-height: 1.9; }
+.stat-tile .label { font-size: 13px; }
+.status-icon { font-size: 13px; }
+
+@media (max-width: 900px) {
+  .brand-text { font-size: 16px; }
+  .nav a { min-height: 42px; font-size: 15px; }
+  .health { font-size: 11px; }
+}
+
+@media (max-width: 767px) {
+  h1 { font-size: 28px; }
+  .page-head h1 { font-size: 30px; }
+  .small { font-size: 15px; }
+  .tiny { font-size: 13px; }
+  .btn { min-height: 46px; font-size: 14px; }
+  .btn.small { min-height: 42px; font-size: 13px; }
+  .word-main .spelling { font-size: 21px; }
+  .word-main .meaning { font-size: 15px; }
+  .ipa-pair { font-size: 15px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important;

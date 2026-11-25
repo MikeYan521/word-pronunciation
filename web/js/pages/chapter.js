@@ -1,14 +1,14 @@
 // Chapter vocabulary page: IPA, dual pronunciation, progress, filtering.
 
-import { api } from '../api.js?v=20261125-1';
+import { api } from '../api.js?v=20261125-2';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { navigate } from '../app.js?v=20261125-1';
+import { navigate } from '../app.js?v=20261125-2';
 import { soundButtons, probeWords, playWordAudio,
          playAndWait, pauseAudio, resumeAudio, stopAudio, resolveAudioUrl,
-         immediateAudioUrl } from '../audio.js?v=20261125-1';
+         immediateAudioUrl } from '../audio.js?v=20261125-2';
 import { LoopController, REPEAT_OPTIONS, INTERVAL_OPTIONS, ACCENT_OPTIONS, ORDER_OPTIONS,
-         LOOP_DEFAULTS } from '../core/loop.js?v=20261125-1';
-import { onUnmount } from '../lifecycle.js?v=20261125-1';
+         LOOP_DEFAULTS } from '../core/loop.js?v=20261125-2';
+import { onUnmount } from '../lifecycle.js?v=20261125-2';
 
 const state = {
   words: [],

@@ -1,7 +1,7 @@
-import { api } from '../api.js?v=20261125-1';
+import { api } from '../api.js?v=20261125-2';
 import { el, mount, toast, loadingCard, modal } from '../ui.js';
-import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js?v=20261125-1';
-import { audioUrlFor } from '../api.js?v=20261125-1';
+import { soundButtons, soundButton, playUrl, playWordAudio, ttsSupport, speak } from '../audio.js?v=20261125-2';
+import { audioUrlFor } from '../api.js?v=20261125-2';
 
 export async function render(root, wordId) {
   mount(root, loadingCard('正在读取词条…'));
